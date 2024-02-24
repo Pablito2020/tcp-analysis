@@ -1,5 +1,9 @@
+from __future__ import annotations
+
+import logging
 import pathlib
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Generator
 
@@ -20,18 +24,35 @@ class EventType(Enum):
 
 @dataclass(frozen=True, order=True)
 class Time:
-    value: float
-
-    def __post_init__(self):
-        if self.value < 0:
-            raise ValueError("Time must be non-negative")
+    value: Decimal
 
     @staticmethod
     def from_str(value: str) -> 'Time':
         try:
-            return Time(float(value))
+            return Time(Decimal(value))
         except ValueError:
             raise ValueError(f'Invalid time: {value}')
+        except InvalidOperation:
+            raise ValueError(f'Invalid decimal time: {value}')
+
+    def __sub__(self, value: 'Time') -> 'Time':
+        assert isinstance(value, Time)
+        return Time(self.value - value.value)
+
+    def __add__(self, other: 'Time') -> 'Time':
+        assert isinstance(other, Time)
+        return Time(self.value + other.value)
+
+    def __mul__(self, other: int | Decimal | Time) -> 'Time':
+        if isinstance(other, Time):
+            return Time(self.value * other.value)
+        return Time(self.value * other)
+
+    def __abs__(self):
+        return Time(abs(self.value))
+
+    def half(self) -> 'Time':
+        return Time(self.value / 2)
 
 
 @dataclass(frozen=True, order=True)
@@ -67,15 +88,16 @@ class Node:
 class PacketType(Enum):
     Tcp = 'tcp'
     Ack = 'ack'
-    Udp = 'cbr'
-    Exp = 'exp'
+    Udp = 'udp'
 
     @staticmethod
     def from_value(value: str) -> 'PacketType':
-        for packet_type in PacketType:
-            if packet_type.value == value:
-                return packet_type
-        raise ValueError(f'Invalid packet type: {value}')
+        if value not in ['tcp', 'ack', 'cbr', 'exp']:
+            raise ValueError(f'Invalid packet type: {value}')
+        if value in ['cbr', 'exp']:
+            return PacketType.Udp
+        # TODO: is this correct?
+        return PacketType(value)
 
 
 @dataclass(frozen=True, order=True)
@@ -90,7 +112,7 @@ class PacketSize:
             raise ValueError(f'Invalid packet size: {value}')
 
 
-@dataclass
+@dataclass(frozen=True, unsafe_hash=True)
 class Flags:
     value: str
 
@@ -162,6 +184,13 @@ class SequenceNumber:
         except ValueError as e:
             raise ValueError(f'Invalid sequence number: {value}, error: {e}')
 
+    @staticmethod
+    def syn_handshake() -> 'SequenceNumber':
+        return SequenceNumber(0)
+
+    def __add__(self, other: int) -> 'SequenceNumber':
+        return SequenceNumber(self.value + other)
+
 
 @dataclass(frozen=True, order=True)
 class PacketIdentifier:
@@ -179,7 +208,7 @@ class PacketIdentifier:
             raise ValueError(f'Invalid packet identifier: {value}, error: {e}')
 
 
-@dataclass
+@dataclass(frozen=True, unsafe_hash=True)
 class PacketEvent:
     event_type: EventType
     time: Time
@@ -224,6 +253,12 @@ class PacketEvent:
             destination_addr=destination_addr,
             sequence_number=sequence_number,
             packet_identifier=packet_identifier)
+
+    def __str__(self):
+        return f'Packet: {self.packet_type} ({self.source} to {self.destination}. Time: {self.time}. Seq: {self.sequence_number}\n'
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class TraceFile:
