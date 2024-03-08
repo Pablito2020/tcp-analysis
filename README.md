@@ -58,7 +58,7 @@ $ python main.py -h
 If you want to run the simulations with the correct queue limit size, you can use the following commands:
 
 ```bash
-$ make fixup
+$ make fix
 ```
 
 ## Execute the tests! 🧪
